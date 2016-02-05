@@ -4,60 +4,57 @@ require 'slim'
 
 parser = Slim::Parser.new(attr_list_delims: { '(' => ')', '[' => ']' })
 
-def render(expression, depth=0)
+def render(io, expression, depth=0)
   case expression[0]
   when :multi
-    expression[1..-1].each { |expr| render expr, depth }
+    expression[1..-1].each { |expr| render io, expr, depth }
 
   when :newline
-    puts
+    io.puts
 
   when :static
-    print expression[1]
+    io.print expression[1]
 
   when :escape
-    print "'"
-    render expression[2], depth
-    print "'"
+    io.print "'"
+    render io, expression[2], depth
+    io.print "'"
 
   when :html
     case expression[1]
     when :doctype
-      print "doctype #{expression[2]}"
+      io.print "doctype #{expression[2]}"
     when :tag
-      case expression[2]
-      when '#', '.'
-        expression[2] = ''
-        expression[3] = expression[3].reject do |expr|
-          if expr.instance_of?(Array) && expr[3][0] == :static
-            case expr[2]
-            when 'id'
-              expression[2] += '#' + expr[3][1]
-            when 'class'
-              expression[2] += '.' + expr[3][1]
-            end
+      expression[2] = '' if expression[2] == '#' || expression[2] == '.'
+      expression[3] = expression[3].reject do |expr|
+        if expr.instance_of?(Array) && expr[3][0] == :static
+          case expr[2]
+          when 'id'
+            expression[2] += '#' + expr[3][1]
+          when 'class'
+            expression[2] += '.' + expr[3][1]
           end
         end
       end
 
-      print '  '*depth, expression[2]
+      io.print '  '*depth, expression[2]
       # handle `:`s
       if expression[4][0] == :multi && expression[4][1] != [:newline]
         expression[4].insert 1, [:newline]
       end
-      expression[3..-1].each { |expr| render expr, depth+1 }
+      expression[3..-1].each { |expr| render io, expr, depth+1 }
     when :attrs
       if expression[2]
-        print '('
+        io.print '('
         expression[2..-1].each do |expr|
-          print ' '
-          render expr, depth
+          io.print ' '
+          render io, expr, depth
         end
-        print ' )'
+        io.print ' )'
       end
     when :attr
-      print expression[2], '='
-      render expression[3], depth
+      io.print expression[2], '='
+      render io, expression[3], depth
     else
       p expression
     end
@@ -67,16 +64,28 @@ def render(expression, depth=0)
     when :text
       case expression[2]
       when :inline
-        print ' '
-        expression[3..-1].each { |expr| render expr, depth+1 }
+        io.print ' '
+        expression[3..-1].each { |expr| render io, expr, depth+1 }
       when :verbatim
-        print '  ' * depth, '| '
-        render expression[3], depth
+        io.print '  ' * depth, '| '
+        render io, expression[3], depth
       else
         p expression
       end
     when :interpolate
-      print expression[2]
+      io.print expression[2]
+    when :embedded
+      case expression[2]
+      when 'javascript'
+        io.print '  ' * depth, 'script.'
+        buf = StringIO.new
+        render buf, expression[3], depth+1
+        io.print buf.string.gsub(/\n+/, "\n" + '  ' * (depth+1))
+      else
+        p expression
+      end
+    else
+      p expression
     end
 
   else
@@ -87,5 +96,5 @@ end
 
 File.open ARGV[0] do |file|
   expression = parser.call(file.read)
-  render expression
+  render STDOUT, expression
 end
