@@ -16,9 +16,9 @@ def render(io, expression, depth=0)
     io.print expression[1]
 
   when :escape
-    io.print "'"
-    render io, expression[2], depth
-    io.print "'"
+    buf = StringIO.new
+    render buf, expression[2], depth
+    io.print buf.string.inspect
 
   when :html
     case expression[1]
