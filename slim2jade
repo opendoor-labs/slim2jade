@@ -104,6 +104,5 @@ end
 
 File.open ARGV[0] do |file|
   expression = parser.call(file.read)
-  p expression
   render STDOUT, expression
 end
