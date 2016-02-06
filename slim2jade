@@ -4,20 +4,19 @@ require 'slim'
 
 parser = Slim::Parser.new(attr_list_delims: { '(' => ')', '[' => ']' })
 
-def render(io, expression, depth=0)
+def render(io, expression, depth=0, options={})
   case expression[0]
   when :multi
-    expression[1..-1].each { |expr| render io, expr, depth }
+    expression[1..-1].each { |expr| render io, expr, depth, options }
 
   when :newline
-    io.puts
+    io.print "\n" unless options[:newline] == false
 
   when :static
     io.print expression[1]
 
   when :escape
-    buf = StringIO.new
-    render buf, expression[2], depth
+    render buf = StringIO.new, expression[2], depth, options
     io.print buf.string.inspect
 
   when :html
@@ -42,59 +41,69 @@ def render(io, expression, depth=0)
       if expression[4][0] == :multi && expression[4][1] != [:newline]
         expression[4].insert 1, [:newline]
       end
-      expression[3..-1].each { |expr| render io, expr, depth+1 }
+      expression[3..-1].each { |expr| render io, expr, depth+1, options }
     when :attrs
       if expression[2]
         io.print '('
         expression[2..-1].each do |expr|
           io.print ' '
-          render io, expr, depth
+          render io, expr, depth, options
         end
         io.print ' )'
       end
     when :attr
       io.print expression[2], '='
-      render io, expression[3], depth
+      render io, expression[3], depth, options
     else
-      p expression
+      warn 'unhandled', expression.inspect
     end
 
   when :slim
     case expression[1]
+    when :interpolate
+      io.print expression[2]
+
+    when :attrvalue
+      io.print expression[3]
+
+    when :control
+      warn 'Cannot hang with control statements', expression.inspect
+
     when :text
+      render buf = StringIO.new, expression[3], depth, newline: false
       case expression[2]
       when :inline
         io.print ' '
-        expression[3..-1].each { |expr| render io, expr, depth+1 }
+        io.print buf.string.gsub("\n", "\n" + '  ' * depth + '| ')
       when :verbatim
-        io.print '  ' * depth, '| '
-        render io, expression[3], depth
+        io.print buf.string.gsub(/^/, '  ' * depth + '| ')
       else
-        p expression
+        warn expression.inspect
       end
-    when :interpolate
-      io.print expression[2]
+
     when :embedded
       case expression[2]
       when 'javascript'
-        io.print '  ' * depth, 'script.'
-        buf = StringIO.new
-        render buf, expression[3], depth+1
-        io.print buf.string.gsub(/\n+/, "\n" + '  ' * (depth+1))
+        io.print '  ' * depth, 'script.', "\n"
+        render buf = StringIO.new, expression[3], depth+1, newline: false
+        io.print buf.string.gsub(/^/, '  ' * (depth+1))
       else
-        p expression
+        warn 'unhandled', expression
       end
+
     else
-      p expression
+      warn expression.inspect
+
     end
 
   else
-    p expression
+    warn expression.inspect
 
   end
 end
 
 File.open ARGV[0] do |file|
   expression = parser.call(file.read)
+  p expression
   render STDOUT, expression
 end
